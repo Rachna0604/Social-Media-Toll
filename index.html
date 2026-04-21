@@ -182,18 +182,27 @@
 
   .hud-phase {
     position: absolute;
-    bottom: 100px; left: 0; right: 0;
+    bottom: 110px; left: 8px; right: 8px;
     text-align: center;
-    font-size: clamp(0.65rem, 3vw, 0.85rem);
-    letter-spacing: 0.25em;
-    color: rgba(0,255,247,0.6);
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(0.82rem, 4vw, 1.05rem);
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    color: #ffffff;
+    text-shadow:
+      -2px -2px 0 #000, 2px -2px 0 #000,
+      -2px  2px 0 #000, 2px  2px 0 #000,
+      0 0 14px rgba(0,255,247,0.9);
     text-transform: uppercase;
+    background: rgba(0,0,0,0.52);
+    padding: 7px 14px;
+    border-radius: 4px;
   }
 
   .hud-progress {
     position: absolute;
-    bottom: 60px; left: 24px; right: 24px;
-    height: 4px;
+    bottom: 68px; left: 24px; right: 24px;
+    height: 5px;
     background: rgba(0,255,247,0.15);
     border-radius: 2px;
     overflow: hidden;
@@ -209,12 +218,19 @@
 
   .hud-pose-status {
     position: absolute;
-    bottom: 24px; left: 0; right: 0;
+    bottom: 20px; left: 8px; right: 8px;
     text-align: center;
-    font-size: 0.65rem;
-    letter-spacing: 0.2em;
-    color: rgba(0,255,247,0.4);
+    font-size: clamp(0.72rem, 3.2vw, 0.86rem);
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    color: #ffffff;
+    text-shadow:
+      -1px -1px 0 #000, 1px -1px 0 #000,
+      -1px  1px 0 #000, 1px  1px 0 #000;
     text-transform: uppercase;
+    background: rgba(0,0,0,0.52);
+    padding: 5px 10px;
+    border-radius: 4px;
   }
 
   /* ─── UNLOCK ─── */
@@ -409,10 +425,10 @@ const poseStatus  = document.getElementById('poseStatus');
 //  STATE
 // ═══════════════════════════════════════════════
 let repCount = 0;
-let phase = 'DOWN';    // generic phase tracker
+let phase = 'DOWN';
 let plankTimer = 0;
-let plankInterval = null;
-let plankActive = false;
+let plankInterval = null; // kept for compat, unused now
+let plankActive = false;  // kept for compat, unused now
 let completed = false;
 let poseReady = false;
 
@@ -465,123 +481,176 @@ const LM = {
 function mid(a, b) { return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, z: (a.z + b.z) / 2 }; }
 function vis(lm, ...idxs) { return idxs.every(i => lm[i] && lm[i].visibility > 0.5); }
 
-// ── SQUAT ──
+// ── HELPERS ──
+function angle3(a, b, c) {
+  // angle at point b formed by a-b-c
+  const ab = { x: a.x - b.x, y: a.y - b.y };
+  const cb = { x: c.x - b.x, y: c.y - b.y };
+  const dot = ab.x * cb.x + ab.y * cb.y;
+  const mag = Math.sqrt((ab.x**2 + ab.y**2) * (cb.x**2 + cb.y**2));
+  if (mag === 0) return 180;
+  return Math.acos(Math.max(-1, Math.min(1, dot / mag))) * (180 / Math.PI);
+}
+
+// ── SQUAT — knee angle approach (works at any camera angle/height) ──
 let squatPhase = 'UP';
+// DOWN = knee bent < 110°  UP = knee straight > 155°
 function detectSquat(lm) {
-  if (!vis(lm, LM.L_HIP, LM.R_HIP, LM.L_KNEE, LM.R_KNEE)) { poseStatus.textContent = 'POSITION: SHOW FULL BODY'; return; }
-  const hip = mid(lm[LM.L_HIP], lm[LM.R_HIP]);
-  const knee = mid(lm[LM.L_KNEE], lm[LM.R_KNEE]);
-  const threshold = 0.04;
-  const isDown = hip.y > knee.y + threshold;
+  // Try both sides; accept whichever has better visibility
+  const haveLeft  = vis(lm, LM.L_HIP, LM.L_KNEE, LM.L_ANKLE);
+  const haveRight = vis(lm, LM.R_HIP, LM.R_KNEE, LM.R_ANKLE);
+
+  if (!haveLeft && !haveRight) {
+    poseStatus.textContent = '⚠ SHOW LEGS IN FRAME — STEP BACK';
+    hudPhase.textContent = 'STEP BACK · SHOW FULL BODY';
+    return;
+  }
+
+  let angles = [];
+  if (haveLeft)  angles.push(angle3(lm[LM.L_HIP],  lm[LM.L_KNEE],  lm[LM.L_ANKLE]));
+  if (haveRight) angles.push(angle3(lm[LM.R_HIP],  lm[LM.R_KNEE],  lm[LM.R_ANKLE]));
+  const kneeAngle = angles.reduce((s, v) => s + v, 0) / angles.length;
+
+  const isDown = kneeAngle < 110;
+  const isUp   = kneeAngle > 155;
 
   if (squatPhase === 'UP' && isDown) {
     squatPhase = 'DOWN';
-    hudPhase.textContent = 'LOWER ↓';
-    poseStatus.textContent = 'SQUAT: IN POSITION';
-  } else if (squatPhase === 'DOWN' && !isDown) {
+    hudPhase.textContent = '↓ GOOD — NOW STAND UP';
+    poseStatus.textContent = `SQUAT DOWN ✓  KNEE ANGLE: ${Math.round(kneeAngle)}°`;
+  } else if (squatPhase === 'DOWN' && isUp) {
     squatPhase = 'UP';
-    hudPhase.textContent = 'STAND UP ↑';
+    hudPhase.textContent = '↑ REP COUNTED!';
     if (!completed) triggerRep();
-    poseStatus.textContent = 'SQUAT: REP COUNTED';
+    poseStatus.textContent = `SQUAT UP ✓  KNEE ANGLE: ${Math.round(kneeAngle)}°`;
   } else {
-    poseStatus.textContent = squatPhase === 'UP' ? 'SQUAT: STAND TALL' : 'SQUAT: HOLD LOWER';
+    const arrow = squatPhase === 'UP' ? '↓ SQUAT DOWN' : '↑ STAND UP FULLY';
+    poseStatus.textContent = `${arrow}  |  KNEE: ${Math.round(kneeAngle)}°`;
   }
 }
 
 // ── JUMPING JACK ──
 let jackPhase = 'CLOSED';
 function detectJack(lm) {
-  if (!vis(lm, LM.L_SHOULDER, LM.R_SHOULDER, LM.L_WRIST, LM.R_WRIST, LM.L_HIP, LM.R_HIP, LM.L_ANKLE, LM.R_ANKLE)) {
-    poseStatus.textContent = 'POSITION: SHOW FULL BODY'; return;
-  }
+  const haveUpper = vis(lm, LM.L_SHOULDER, LM.R_SHOULDER, LM.L_WRIST, LM.R_WRIST);
+  const haveLower = vis(lm, LM.L_HIP, LM.R_HIP, LM.L_ANKLE, LM.R_ANKLE);
+
+  if (!haveUpper) { poseStatus.textContent = '⚠ SHOW ARMS IN FRAME'; return; }
+
   const lShoulder = lm[LM.L_SHOULDER], rShoulder = lm[LM.R_SHOULDER];
   const lWrist = lm[LM.L_WRIST], rWrist = lm[LM.R_WRIST];
-  const lHip = lm[LM.L_HIP], rHip = lm[LM.R_HIP];
-  const lAnkle = lm[LM.L_ANKLE], rAnkle = lm[LM.R_ANKLE];
 
-  const wristsAboveShoulder = lWrist.y < lShoulder.y && rWrist.y < rShoulder.y;
-  const hipWidth = Math.abs(lHip.x - rHip.x);
-  const feetWidth = Math.abs(lAnkle.x - rAnkle.x);
-  const feetWide = feetWidth > hipWidth * 1.3;
+  const wristsAboveShoulder = lWrist.y < lShoulder.y - 0.02 && rWrist.y < rShoulder.y - 0.02;
+
+  let feetWide = true; // if lower body not visible assume feet ok
+  if (haveLower) {
+    const hipWidth = Math.abs(lm[LM.L_HIP].x - lm[LM.R_HIP].x);
+    const feetWidth = Math.abs(lm[LM.L_ANKLE].x - lm[LM.R_ANKLE].x);
+    feetWide = feetWidth > hipWidth * 1.2;
+  }
+
   const isOpen = wristsAboveShoulder && feetWide;
 
   if (jackPhase === 'CLOSED' && isOpen) {
     jackPhase = 'OPEN';
-    hudPhase.textContent = 'ARMS UP + FEET WIDE ★';
-    poseStatus.textContent = 'JACK: OPEN';
+    hudPhase.textContent = '★ OPEN — JUMP BACK';
+    poseStatus.textContent = 'JACK OPEN ✓';
   } else if (jackPhase === 'OPEN' && !isOpen) {
     jackPhase = 'CLOSED';
-    hudPhase.textContent = 'ARMS DOWN + FEET TOGETHER';
+    hudPhase.textContent = '✓ REP! JUMP OUT AGAIN';
     if (!completed) triggerRep();
-    poseStatus.textContent = 'JACK: REP COUNTED';
+    poseStatus.textContent = 'JACK CLOSED ✓ REP COUNTED';
   } else {
-    poseStatus.textContent = jackPhase === 'CLOSED' ? 'JACK: JUMP OUT' : 'JACK: JUMP BACK';
+    poseStatus.textContent = jackPhase === 'CLOSED' ? '↑ JUMP OUT & RAISE ARMS' : '↓ JUMP BACK & LOWER ARMS';
   }
 }
 
-// ── PUSH-UP ──
+// ── PUSH-UP — wrist-to-shoulder angle ──
 let pushPhase = 'UP';
 function detectPushup(lm) {
-  if (!vis(lm, LM.L_SHOULDER, LM.R_SHOULDER, LM.L_ELBOW, LM.R_ELBOW)) {
-    poseStatus.textContent = 'POSITION: SHOW UPPER BODY'; return;
-  }
-  const shoulder = mid(lm[LM.L_SHOULDER], lm[LM.R_SHOULDER]);
-  const elbow = mid(lm[LM.L_ELBOW], lm[LM.R_ELBOW]);
-  const threshold = 0.03;
-  const isDown = Math.abs(shoulder.y - elbow.y) < threshold;
+  const haveLeft  = vis(lm, LM.L_SHOULDER, LM.L_ELBOW, LM.L_WRIST);
+  const haveRight = vis(lm, LM.R_SHOULDER, LM.R_ELBOW, LM.R_WRIST);
+
+  if (!haveLeft && !haveRight) { poseStatus.textContent = '⚠ SHOW ARMS IN FRAME'; return; }
+
+  let angles = [];
+  if (haveLeft)  angles.push(angle3(lm[LM.L_SHOULDER], lm[LM.L_ELBOW], lm[LM.L_WRIST]));
+  if (haveRight) angles.push(angle3(lm[LM.R_SHOULDER], lm[LM.R_ELBOW], lm[LM.R_WRIST]));
+  const elbowAngle = angles.reduce((s, v) => s + v, 0) / angles.length;
+
+  const isDown = elbowAngle < 95;
+  const isUp   = elbowAngle > 155;
 
   if (pushPhase === 'UP' && isDown) {
     pushPhase = 'DOWN';
-    hudPhase.textContent = 'HOLD ↓';
-    poseStatus.textContent = 'PUSH: IN POSITION';
-  } else if (pushPhase === 'DOWN' && !isDown) {
+    hudPhase.textContent = '↓ GOOD — PUSH UP!';
+    poseStatus.textContent = `PUSH DOWN ✓  ELBOW: ${Math.round(elbowAngle)}°`;
+  } else if (pushPhase === 'DOWN' && isUp) {
     pushPhase = 'UP';
-    hudPhase.textContent = 'PUSH UP ↑';
+    hudPhase.textContent = '↑ REP COUNTED!';
     if (!completed) triggerRep();
-    poseStatus.textContent = 'PUSH: REP COUNTED';
+    poseStatus.textContent = `PUSH UP ✓  ELBOW: ${Math.round(elbowAngle)}°`;
   } else {
-    poseStatus.textContent = pushPhase === 'UP' ? 'PUSH: GET LOW' : 'PUSH: HOLD BOTTOM';
+    poseStatus.textContent = `ELBOW: ${Math.round(elbowAngle)}° | ${pushPhase === 'UP' ? 'GO LOW' : 'PUSH UP'}`;
   }
 }
 
-// ── PLANK ──
-function detectPlank(lm) {
-  if (!vis(lm, LM.L_SHOULDER, LM.R_SHOULDER, LM.L_HIP, LM.R_HIP, LM.L_KNEE, LM.R_KNEE)) {
-    if (plankActive) {
-      plankActive = false;
-      hudPhase.textContent = 'HOLD PLANK POSITION';
-    }
-    poseStatus.textContent = 'PLANK: SHOW FULL BODY SIDE VIEW'; return;
-  }
-  const shoulder = mid(lm[LM.L_SHOULDER], lm[LM.R_SHOULDER]);
-  const hip = mid(lm[LM.L_HIP], lm[LM.R_HIP]);
-  const knee = mid(lm[LM.L_KNEE], lm[LM.R_KNEE]);
+// ── PLANK — timestamp-based timer (fixes interval flicker bug) ──
+let plankStartTime = null;   // epoch ms when plank hold began
+let plankAccum = 0;          // seconds accumulated in previous holds
+let plankWasActive = false;
 
-  const tol = 0.1;
-  const aligned = Math.abs(shoulder.y - hip.y) < tol && Math.abs(hip.y - knee.y) < tol;
+function detectPlank(lm) {
+  // Use one side if side-profile; fall back to both
+  const haveAny = vis(lm, LM.L_SHOULDER, LM.L_HIP, LM.L_KNEE) ||
+                  vis(lm, LM.R_SHOULDER, LM.R_HIP, LM.R_KNEE);
+
+  if (!haveAny) {
+    if (plankWasActive) { plankAccum += (Date.now() - plankStartTime) / 1000; plankStartTime = null; plankWasActive = false; }
+    poseStatus.textContent = '⚠ SHOW FULL BODY SIDE PROFILE';
+    hudPhase.textContent = 'FACE SIDEWAYS · SHOW FULL BODY';
+    return;
+  }
+
+  // Pick whichever side is more visible
+  let shoulder, hip, knee;
+  const lVis = (lm[LM.L_SHOULDER]?.visibility||0) + (lm[LM.L_HIP]?.visibility||0) + (lm[LM.L_KNEE]?.visibility||0);
+  const rVis = (lm[LM.R_SHOULDER]?.visibility||0) + (lm[LM.R_HIP]?.visibility||0) + (lm[LM.R_KNEE]?.visibility||0);
+  if (lVis >= rVis) {
+    shoulder = lm[LM.L_SHOULDER]; hip = lm[LM.L_HIP]; knee = lm[LM.L_KNEE];
+  } else {
+    shoulder = lm[LM.R_SHOULDER]; hip = lm[LM.R_HIP]; knee = lm[LM.R_KNEE];
+  }
+
+  // Body is aligned horizontally if y-values are all close (plank = flat body)
+  const ySpread = Math.max(shoulder.y, hip.y, knee.y) - Math.min(shoulder.y, hip.y, knee.y);
+  const tol = 0.18; // generous for front-facing camera
+  const aligned = ySpread < tol;
+
+  const now = Date.now();
 
   if (aligned) {
-    if (!plankActive) {
-      plankActive = true;
-      hudPhase.textContent = 'PLANK DETECTED — HOLD!';
-      poseStatus.textContent = 'PLANK: ACTIVE';
-      if (!plankInterval) {
-        plankInterval = setInterval(() => {
-          if (!plankActive || completed) return;
-          plankTimer++;
-          updateHUD();
-          if (plankTimer >= chosenTask.goal) triggerComplete();
-        }, 1000);
-      }
+    if (!plankWasActive) {
+      plankStartTime = now;
+      plankWasActive = true;
+      hudPhase.textContent = '🔥 PLANK ACTIVE — HOLD!';
     }
-    poseStatus.textContent = `PLANK: HOLDING — ${chosenTask.goal - Math.floor(plankTimer)}s LEFT`;
+    const elapsed = plankAccum + (now - plankStartTime) / 1000;
+    plankTimer = elapsed;
+    updateHUD();
+    const left = Math.max(0, Math.ceil(chosenTask.goal - elapsed));
+    poseStatus.textContent = `PLANK HOLDING ✓  ${left}s LEFT`;
+    if (elapsed >= chosenTask.goal && !completed) triggerComplete();
   } else {
-    if (plankActive) {
-      plankActive = false;
-      poseStatus.textContent = 'PLANK: MISALIGNED — FIX POSITION';
-      hudPhase.textContent = 'REALIGN YOUR BODY';
+    if (plankWasActive) {
+      plankAccum += (now - plankStartTime) / 1000;
+      plankStartTime = null;
+      plankWasActive = false;
+      poseStatus.textContent = `⚠ LOST PLANK — REALIGN  (${Math.floor(plankAccum)}s saved)`;
+      hudPhase.textContent = 'REALIGN — KEEP BODY FLAT';
     } else {
-      poseStatus.textContent = 'PLANK: NEEDS STRAIGHT BODY';
+      const spread = Math.round(ySpread * 100);
+      poseStatus.textContent = `NOT FLAT ENOUGH (spread ${spread}) — STRAIGHTEN BODY`;
     }
   }
 }
@@ -710,6 +779,59 @@ async function startCamera() {
 // ═══════════════════════════════════════════════
 //  START BUTTON
 // ═══════════════════════════════════════════════
+// ── BACK-BUTTON LOCK ──
+// Push two history states so the back button hits our interceptor first
+// instead of navigating away. Only active while challenge is in progress.
+let backLockActive = false;
+
+function activateBackLock() {
+  backLockActive = true;
+  history.pushState({ toll: true }, '');
+  history.pushState({ toll: true }, ''); // double push = two back-presses needed
+}
+
+window.addEventListener('popstate', (e) => {
+  if (!backLockActive) return;
+  if (completed) { backLockActive = false; return; }
+  // Re-push the state to stay on page
+  history.pushState({ toll: true }, '');
+  // Show warning overlay briefly
+  showBackWarning();
+});
+
+function showBackWarning() {
+  let warn = document.getElementById('backWarn');
+  if (!warn) {
+    warn = document.createElement('div');
+    warn.id = 'backWarn';
+    warn.style.cssText = `
+      position:fixed;inset:0;z-index:9999;
+      display:flex;flex-direction:column;align-items:center;justify-content:center;
+      background:rgba(0,0,0,0.88);
+      font-family:'Orbitron',sans-serif;text-align:center;padding:24px;
+    `;
+    warn.innerHTML = `
+      <div style="font-size:3rem;margin-bottom:16px;">🚫</div>
+      <div style="color:#ff00c8;font-size:1.1rem;font-weight:700;text-shadow:0 0 12px #ff00c8;letter-spacing:0.1em;">
+        NO SHORTCUTS!
+      </div>
+      <div style="color:#fff;font-size:0.8rem;margin-top:10px;letter-spacing:0.15em;line-height:1.6;">
+        COMPLETE YOUR ${chosenTask.label}<br>TO UNLOCK INSTAGRAM
+      </div>
+      <button onclick="document.getElementById('backWarn').remove()" style="
+        margin-top:22px;font-family:'Orbitron',sans-serif;font-size:0.85rem;
+        font-weight:700;letter-spacing:0.12em;color:#050a0e;
+        background:#00fff7;border:none;padding:12px 28px;border-radius:4px;
+        box-shadow:0 0 12px #00fff7;cursor:pointer;
+      ">[ KEEP GOING ]</button>
+    `;
+    document.body.appendChild(warn);
+  }
+  warn.style.display = 'flex';
+  // Auto-hide after 2.5s if user doesn't dismiss
+  setTimeout(() => { if (warn) warn.remove(); }, 2500);
+}
+
 document.getElementById('btnStart').addEventListener('click', async () => {
   // unlock audio context on user gesture
   if (!audioCtx) audioCtx = new AudioCtx();
@@ -718,6 +840,7 @@ document.getElementById('btnStart').addEventListener('click', async () => {
   splashEl.classList.add('hidden');
   exerciseEl.classList.remove('hidden');
   updateHUD();
+  activateBackLock();
 
   await acquireWakeLock();
   initPose();
@@ -725,10 +848,10 @@ document.getElementById('btnStart').addEventListener('click', async () => {
 
   // task-specific initial instructions
   const instrs = {
-    squat: 'STAND FACING CAMERA · SQUAT DOWN',
-    jack: 'STAND FACING CAMERA · ARMS AT SIDES',
-    pushup: 'GET INTO PUSH-UP POSITION',
-    plank: 'GET INTO PLANK · SHOW SIDE PROFILE',
+    squat:  '↓ SQUAT DOWN · STEP BACK FROM CAMERA',
+    jack:   '★ STAND · ARMS AT SIDES · JUMP OUT',
+    pushup: '↓ GET INTO PUSH-UP POSITION',
+    plank:  '🔥 FACE SIDEWAYS · HOLD PLANK FLAT',
   };
   hudPhase.textContent = instrs[chosenTask.id] || 'GET INTO POSITION';
 });
