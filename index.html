@@ -1,127 +1,737 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Social Media Toll</title>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
-  <style>
-    body { margin: 0; background: #0a0a0a; color: #00ffcc; font-family: 'Courier New', monospace; overflow: hidden; }
-    #container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; align-items: center; }
-    video, canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
-    #ui-layer { z-index: 10; position: relative; text-align: center; background: rgba(0,0,0,0.6); width: 100%; padding: 20px; border-bottom: 2px solid #00ffcc; }
-    #counter { font-size: 5rem; font-weight: bold; text-shadow: 0 0 20px #00ffcc; }
-    #task-name { font-size: 1.5rem; letter-spacing: 2px; }
-    #unlock-btn { display: none; position: absolute; bottom: 50px; padding: 20px 40px; font-size: 1.5rem; background: #00ffcc; color: black; border: none; border-radius: 50px; font-weight: bold; cursor: pointer; box-shadow: 0 0 30px #00ffcc; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Social Media Toll</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --cyan: #00fff7;
+    --magenta: #ff00c8;
+    --yellow: #ffe600;
+    --dark: #050a0e;
+    --panel: rgba(5,10,14,0.82);
+    --glow-cyan: 0 0 8px #00fff7, 0 0 24px #00fff788;
+    --glow-mag: 0 0 8px #ff00c8, 0 0 24px #ff00c888;
+  }
+
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: var(--dark);
+    font-family: 'Share Tech Mono', monospace;
+    color: var(--cyan);
+  }
+
+  /* ─── SCREENS ─── */
+  .screen {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    z-index: 10;
+    transition: opacity 0.4s ease;
+  }
+  .screen.hidden { opacity: 0; pointer-events: none; }
+
+  /* ─── SPLASH ─── */
+  #splash {
+    background: var(--dark);
+    gap: 0;
+  }
+
+  .scanlines {
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(
+      to bottom,
+      transparent 0px, transparent 3px,
+      rgba(0,255,247,0.03) 3px, rgba(0,255,247,0.03) 4px
+    );
+    pointer-events: none; z-index: 999;
+  }
+
+  .splash-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(2rem, 10vw, 3.5rem);
+    font-weight: 900;
+    color: var(--cyan);
+    text-shadow: var(--glow-cyan);
+    letter-spacing: 0.05em;
+    text-align: center;
+    line-height: 1.1;
+  }
+  .splash-title span { color: var(--magenta); text-shadow: var(--glow-mag); }
+
+  .splash-sub {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: clamp(0.75rem, 3.5vw, 1rem);
+    color: rgba(0,255,247,0.55);
+    text-align: center;
+    margin-top: 10px;
+    letter-spacing: 0.2em;
+  }
+
+  .splash-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin: 32px 20px 0;
+    width: calc(100% - 40px);
+    max-width: 400px;
+  }
+  .task-card {
+    border: 1px solid rgba(0,255,247,0.25);
+    background: rgba(0,255,247,0.04);
+    padding: 14px 10px;
+    border-radius: 6px;
+    text-align: center;
+    font-size: 0.72rem;
+    letter-spacing: 0.05em;
+    color: rgba(0,255,247,0.7);
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .task-card .icon { font-size: 1.6rem; display: block; margin-bottom: 4px; }
+  .task-card.active {
+    border-color: var(--cyan);
+    background: rgba(0,255,247,0.12);
+    color: var(--cyan);
+    box-shadow: var(--glow-cyan);
+  }
+
+  .btn-start {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 1rem; font-weight: 700;
+    letter-spacing: 0.15em;
+    color: var(--dark);
+    background: var(--cyan);
+    border: none; outline: none;
+    padding: 16px 40px;
+    border-radius: 4px;
+    margin-top: 28px;
+    cursor: pointer;
+    box-shadow: var(--glow-cyan);
+    transition: transform 0.1s, box-shadow 0.1s;
+  }
+  .btn-start:active { transform: scale(0.96); box-shadow: none; }
+
+  /* ─── EXERCISE ─── */
+  #exercise { background: #000; z-index: 1; }
+
+  #video {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1);
+  }
+
+  #canvas {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    transform: scaleX(-1);
+  }
+
+  .hud {
+    position: absolute; inset: 0;
+    pointer-events: none;
+    z-index: 5;
+  }
+
+  .hud-task {
+    position: absolute; top: 16px; left: 0; right: 0;
+    text-align: center;
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(0.7rem, 3.5vw, 0.95rem);
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    color: var(--cyan);
+    text-shadow: var(--glow-cyan);
+    padding: 6px 16px;
+    text-transform: uppercase;
+  }
+
+  .hud-counter {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(5rem, 28vw, 10rem);
+    font-weight: 900;
+    color: var(--cyan);
+    text-shadow: 0 0 20px #00fff7, 0 0 60px #00fff788, 0 0 120px #00fff733;
+    opacity: 0.92;
+    transition: transform 0.08s ease, color 0.08s;
+    pointer-events: none;
+  }
+  .hud-counter.pulse {
+    animation: pulse-counter 0.25s ease;
+  }
+  @keyframes pulse-counter {
+    0% { transform: translate(-50%,-50%) scale(1); color: var(--cyan); }
+    50% { transform: translate(-50%,-50%) scale(1.3); color: var(--yellow); text-shadow: 0 0 30px #ffe600, 0 0 80px #ffe60088; }
+    100% { transform: translate(-50%,-50%) scale(1); color: var(--cyan); }
+  }
+
+  .hud-phase {
+    position: absolute;
+    bottom: 100px; left: 0; right: 0;
+    text-align: center;
+    font-size: clamp(0.65rem, 3vw, 0.85rem);
+    letter-spacing: 0.25em;
+    color: rgba(0,255,247,0.6);
+    text-transform: uppercase;
+  }
+
+  .hud-progress {
+    position: absolute;
+    bottom: 60px; left: 24px; right: 24px;
+    height: 4px;
+    background: rgba(0,255,247,0.15);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .hud-progress-fill {
+    height: 100%;
+    background: var(--cyan);
+    box-shadow: var(--glow-cyan);
+    border-radius: 2px;
+    transition: width 0.3s ease;
+    width: 0%;
+  }
+
+  .hud-pose-status {
+    position: absolute;
+    bottom: 24px; left: 0; right: 0;
+    text-align: center;
+    font-size: 0.65rem;
+    letter-spacing: 0.2em;
+    color: rgba(0,255,247,0.4);
+    text-transform: uppercase;
+  }
+
+  /* ─── UNLOCK ─── */
+  #unlock {
+    background: radial-gradient(ellipse at center, #0d1f1e 0%, var(--dark) 70%);
+    gap: 0;
+    z-index: 20;
+  }
+
+  .unlock-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(1.6rem, 8vw, 2.8rem);
+    font-weight: 900;
+    color: var(--yellow);
+    text-shadow: 0 0 12px #ffe600, 0 0 40px #ffe60088;
+    text-align: center;
+    letter-spacing: 0.08em;
+  }
+  .unlock-sub {
+    font-size: 0.8rem;
+    color: rgba(0,255,247,0.6);
+    letter-spacing: 0.2em;
+    text-align: center;
+    margin-top: 8px;
+    text-transform: uppercase;
+  }
+
+  .unlock-icon {
+    font-size: 5rem;
+    margin: 24px 0;
+    animation: float 2.5s ease-in-out infinite;
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-12px); }
+  }
+
+  .btn-unlock {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 1.1rem; font-weight: 700;
+    letter-spacing: 0.15em;
+    color: var(--dark);
+    background: linear-gradient(135deg, var(--magenta), var(--cyan));
+    border: none; outline: none;
+    padding: 18px 48px;
+    border-radius: 4px;
+    margin-top: 8px;
+    cursor: pointer;
+    box-shadow: 0 0 20px #ff00c888, 0 0 40px #00fff744;
+    animation: glow-pulse 1.8s ease-in-out infinite;
+    text-decoration: none;
+    display: inline-block;
+  }
+  @keyframes glow-pulse {
+    0%, 100% { box-shadow: 0 0 20px #ff00c888, 0 0 40px #00fff744; }
+    50% { box-shadow: 0 0 40px #ff00c8cc, 0 0 80px #00fff788; }
+  }
+  .btn-unlock:active { transform: scale(0.96); }
+
+  /* corner decorations */
+  .corner {
+    position: fixed;
+    width: 32px; height: 32px;
+    border-color: rgba(0,255,247,0.3);
+    border-style: solid;
+    pointer-events: none;
+    z-index: 998;
+  }
+  .corner-tl { top: 12px; left: 12px; border-width: 2px 0 0 2px; }
+  .corner-tr { top: 12px; right: 12px; border-width: 2px 2px 0 0; }
+  .corner-bl { bottom: 12px; left: 12px; border-width: 0 0 2px 2px; }
+  .corner-br { bottom: 12px; right: 12px; border-width: 0 2px 2px 0; }
+</style>
 </head>
 <body>
 
-<div id="container">
-  <video id="input_video"></video>
-  <canvas id="output_canvas"></canvas>
-  
-  <div id="ui-layer">
-    <div id="task-name">INITIALIZING AI...</div>
-    <div id="counter">0 / 0</div>
-  </div>
+<div class="scanlines"></div>
+<div class="corner corner-tl"></div>
+<div class="corner corner-tr"></div>
+<div class="corner corner-bl"></div>
+<div class="corner corner-br"></div>
 
-  <button id="unlock-btn" onclick="window.location.href='instagram://'">UNLOCK INSTAGRAM</button>
+<!-- SPLASH SCREEN -->
+<div id="splash" class="screen">
+  <div class="splash-title">SOCIAL<br><span>MEDIA</span><br>TOLL</div>
+  <div class="splash-sub">// PAY WITH YOUR BODY //</div>
+
+  <div class="splash-grid" id="taskGrid"></div>
+
+  <button class="btn-start" id="btnStart">[ INITIALIZE ]</button>
+</div>
+
+<!-- EXERCISE SCREEN -->
+<div id="exercise" class="screen hidden">
+  <video id="video" playsinline autoplay muted></video>
+  <canvas id="canvas"></canvas>
+  <div class="hud">
+    <div class="hud-task" id="hudTask">LOADING...</div>
+    <div class="hud-counter" id="hudCounter">0</div>
+    <div class="hud-phase" id="hudPhase">GET INTO POSITION</div>
+    <div class="hud-progress"><div class="hud-progress-fill" id="progressFill"></div></div>
+    <div class="hud-pose-status" id="poseStatus">AWAITING POSE DETECTION</div>
+  </div>
+</div>
+
+<!-- UNLOCK SCREEN -->
+<div id="unlock" class="screen hidden">
+  <div class="unlock-title">ACCESS<br>GRANTED</div>
+  <div class="unlock-sub">Toll paid. You earned it.</div>
+  <div class="unlock-icon">🔓</div>
+  <a class="btn-unlock" id="btnUnlock" href="intent://instagram.com/#Intent;package=com.instagram.android;scheme=https;end">[ OPEN INSTAGRAM ]</a>
 </div>
 
 <script>
-const videoElement = document.getElementById('input_video');
-const canvasElement = document.getElementById('output_canvas');
-const canvasCtx = canvasElement.getContext('2d');
-const taskText = document.getElementById('task-name');
-const counterText = document.getElementById('counter');
-const unlockBtn = document.getElementById('unlock-btn');
+// ═══════════════════════════════════════════════
+//  AUDIO ENGINE
+// ═══════════════════════════════════════════════
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+let audioCtx;
 
-let count = 0;
-let stage = 'up';
-let currentTask = {};
+function beep(freq = 880, dur = 0.12, type = 'sine', vol = 0.4) {
+  try {
+    if (!audioCtx) audioCtx = new AudioCtx();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+    osc.start(); osc.stop(audioCtx.currentTime + dur);
+  } catch(e) {}
+}
 
+function repBeep() { beep(1046, 0.12, 'sine', 0.35); setTimeout(() => beep(1318, 0.1, 'sine', 0.25), 90); }
+function completeBeep() {
+  [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, 0.18, 'triangle', 0.4), i * 120));
+}
+
+// ═══════════════════════════════════════════════
+//  WAKE LOCK
+// ═══════════════════════════════════════════════
+let wakeLock = null;
+async function acquireWakeLock() {
+  if ('wakeLock' in navigator) {
+    try { wakeLock = await navigator.wakeLock.request('screen'); } catch(e) {}
+  }
+}
+document.addEventListener('visibilitychange', async () => {
+  if (wakeLock !== null && document.visibilityState === 'visible') await acquireWakeLock();
+});
+
+// ═══════════════════════════════════════════════
+//  TASK DEFINITIONS
+// ═══════════════════════════════════════════════
 const TASKS = [
-  { name: "SQUATS", target: 10, type: "reps" },
-  { name: "JUMPING JACKS", target: 15, type: "reps" }
+  { id: 'squat',   icon: '🦵', label: '10 SQUATS',        goal: 10,  unit: 'reps' },
+  { id: 'jack',    icon: '⭐', label: '20 JUMPING JACKS', goal: 20,  unit: 'reps' },
+  { id: 'pushup',  icon: '💪', label: '10 PUSH-UPS',      goal: 10,  unit: 'reps' },
+  { id: 'plank',   icon: '🔥', label: '60s PLANK',        goal: 60,  unit: 'secs' },
 ];
 
-// 1. Pick a random task
-function initTask() {
-  currentTask = TASKS[Math.floor(Math.random() * TASKS.length)];
-  count = 0;
-  taskText.innerText = `PAYMENT REQUIRED: ${currentTask.name}`;
-  updateUI();
+const chosenTask = TASKS[Math.floor(Math.random() * TASKS.length)];
+
+// ═══════════════════════════════════════════════
+//  SPLASH SETUP
+// ═══════════════════════════════════════════════
+const taskGrid = document.getElementById('taskGrid');
+TASKS.forEach(t => {
+  const div = document.createElement('div');
+  div.className = 'task-card' + (t.id === chosenTask.id ? ' active' : '');
+  div.innerHTML = `<span class="icon">${t.icon}</span>${t.label}`;
+  taskGrid.appendChild(div);
+});
+
+// ═══════════════════════════════════════════════
+//  DOM REFS
+// ═══════════════════════════════════════════════
+const splashEl    = document.getElementById('splash');
+const exerciseEl  = document.getElementById('exercise');
+const unlockEl    = document.getElementById('unlock');
+const videoEl     = document.getElementById('video');
+const canvasEl    = document.getElementById('canvas');
+const ctx2d       = canvasEl.getContext('2d');
+const hudTask     = document.getElementById('hudTask');
+const hudCounter  = document.getElementById('hudCounter');
+const hudPhase    = document.getElementById('hudPhase');
+const progressFill= document.getElementById('progressFill');
+const poseStatus  = document.getElementById('poseStatus');
+
+// ═══════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════
+let repCount = 0;
+let phase = 'DOWN';    // generic phase tracker
+let plankTimer = 0;
+let plankInterval = null;
+let plankActive = false;
+let completed = false;
+let poseReady = false;
+
+hudTask.textContent = `${chosenTask.icon} ${chosenTask.label}`;
+
+function updateHUD() {
+  const val = chosenTask.unit === 'secs' ? Math.floor(plankTimer) : repCount;
+  const goalVal = chosenTask.goal;
+  hudCounter.textContent = val;
+  const pct = Math.min(100, (val / goalVal) * 100);
+  progressFill.style.width = pct + '%';
 }
 
-function updateUI() {
-  counterText.innerText = `${count} / ${currentTask.target}`;
-  if (count >= currentTask.target) {
-    unlockBtn.style.display = 'block';
-    taskText.innerText = "PAYMENT VERIFIED";
+function triggerRep() {
+  repCount++;
+  repBeep();
+  const el = hudCounter;
+  el.classList.remove('pulse');
+  void el.offsetWidth;
+  el.classList.add('pulse');
+  updateHUD();
+  if (repCount >= chosenTask.goal) triggerComplete();
+}
+
+function triggerComplete() {
+  if (completed) return;
+  completed = true;
+  completeBeep();
+  if (plankInterval) { clearInterval(plankInterval); plankInterval = null; }
+  setTimeout(() => {
+    exerciseEl.classList.add('hidden');
+    unlockEl.classList.remove('hidden');
+  }, 800);
+}
+
+// ═══════════════════════════════════════════════
+//  POSE DETECTION LOGIC
+// ═══════════════════════════════════════════════
+
+// MediaPipe landmark indices
+const LM = {
+  NOSE: 0, L_SHOULDER: 11, R_SHOULDER: 12,
+  L_ELBOW: 13, R_ELBOW: 14,
+  L_WRIST: 15, R_WRIST: 16,
+  L_HIP: 23, R_HIP: 24,
+  L_KNEE: 25, R_KNEE: 26,
+  L_ANKLE: 27, R_ANKLE: 28,
+};
+
+function mid(a, b) { return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, z: (a.z + b.z) / 2 }; }
+function vis(lm, ...idxs) { return idxs.every(i => lm[i] && lm[i].visibility > 0.5); }
+
+// ── SQUAT ──
+let squatPhase = 'UP';
+function detectSquat(lm) {
+  if (!vis(lm, LM.L_HIP, LM.R_HIP, LM.L_KNEE, LM.R_KNEE)) { poseStatus.textContent = 'POSITION: SHOW FULL BODY'; return; }
+  const hip = mid(lm[LM.L_HIP], lm[LM.R_HIP]);
+  const knee = mid(lm[LM.L_KNEE], lm[LM.R_KNEE]);
+  const threshold = 0.04;
+  const isDown = hip.y > knee.y + threshold;
+
+  if (squatPhase === 'UP' && isDown) {
+    squatPhase = 'DOWN';
+    hudPhase.textContent = 'LOWER ↓';
+    poseStatus.textContent = 'SQUAT: IN POSITION';
+  } else if (squatPhase === 'DOWN' && !isDown) {
+    squatPhase = 'UP';
+    hudPhase.textContent = 'STAND UP ↑';
+    if (!completed) triggerRep();
+    poseStatus.textContent = 'SQUAT: REP COUNTED';
+  } else {
+    poseStatus.textContent = squatPhase === 'UP' ? 'SQUAT: STAND TALL' : 'SQUAT: HOLD LOWER';
   }
 }
 
-// 2. Detection Logic
-function onResults(results) {
-  canvasCtx.save();
-  canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-  canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
-  
-  if (results.poseLandmarks) {
-    drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, {color: '#00ffcc', lineWidth: 4});
-    drawLandmarks(canvasCtx, results.poseLandmarks, {color: '#ffffff', lineWidth: 2, radius: 3});
+// ── JUMPING JACK ──
+let jackPhase = 'CLOSED';
+function detectJack(lm) {
+  if (!vis(lm, LM.L_SHOULDER, LM.R_SHOULDER, LM.L_WRIST, LM.R_WRIST, LM.L_HIP, LM.R_HIP, LM.L_ANKLE, LM.R_ANKLE)) {
+    poseStatus.textContent = 'POSITION: SHOW FULL BODY'; return;
+  }
+  const lShoulder = lm[LM.L_SHOULDER], rShoulder = lm[LM.R_SHOULDER];
+  const lWrist = lm[LM.L_WRIST], rWrist = lm[LM.R_WRIST];
+  const lHip = lm[LM.L_HIP], rHip = lm[LM.R_HIP];
+  const lAnkle = lm[LM.L_ANKLE], rAnkle = lm[LM.R_ANKLE];
 
-    const landmarks = results.poseLandmarks;
-    const leftHip = landmarks[23];
-    const leftKnee = landmarks[25];
-    const leftAnkle = landmarks[27];
-    const leftWrist = landmarks[15];
-    const leftShoulder = landmarks[11];
+  const wristsAboveShoulder = lWrist.y < lShoulder.y && rWrist.y < rShoulder.y;
+  const hipWidth = Math.abs(lHip.x - rHip.x);
+  const feetWidth = Math.abs(lAnkle.x - rAnkle.x);
+  const feetWide = feetWidth > hipWidth * 1.3;
+  const isOpen = wristsAboveShoulder && feetWide;
 
-    if (currentTask.name === "SQUATS") {
-      // Logic: Hip goes below Knee
-      if (leftHip.y > leftKnee.y + 0.05) stage = 'down';
-      if (leftHip.y < leftKnee.y && stage === 'down') {
-        count++;
-        stage = 'up';
-        updateUI();
-      }
-    } else if (currentTask.name === "JUMPING JACKS") {
-      // Logic: Hands go above shoulders
-      if (leftWrist.y < leftShoulder.y) stage = 'wide';
-      if (leftWrist.y > leftShoulder.y && stage === 'wide') {
-        count++;
-        stage = 'closed';
-        updateUI();
+  if (jackPhase === 'CLOSED' && isOpen) {
+    jackPhase = 'OPEN';
+    hudPhase.textContent = 'ARMS UP + FEET WIDE ★';
+    poseStatus.textContent = 'JACK: OPEN';
+  } else if (jackPhase === 'OPEN' && !isOpen) {
+    jackPhase = 'CLOSED';
+    hudPhase.textContent = 'ARMS DOWN + FEET TOGETHER';
+    if (!completed) triggerRep();
+    poseStatus.textContent = 'JACK: REP COUNTED';
+  } else {
+    poseStatus.textContent = jackPhase === 'CLOSED' ? 'JACK: JUMP OUT' : 'JACK: JUMP BACK';
+  }
+}
+
+// ── PUSH-UP ──
+let pushPhase = 'UP';
+function detectPushup(lm) {
+  if (!vis(lm, LM.L_SHOULDER, LM.R_SHOULDER, LM.L_ELBOW, LM.R_ELBOW)) {
+    poseStatus.textContent = 'POSITION: SHOW UPPER BODY'; return;
+  }
+  const shoulder = mid(lm[LM.L_SHOULDER], lm[LM.R_SHOULDER]);
+  const elbow = mid(lm[LM.L_ELBOW], lm[LM.R_ELBOW]);
+  const threshold = 0.03;
+  const isDown = Math.abs(shoulder.y - elbow.y) < threshold;
+
+  if (pushPhase === 'UP' && isDown) {
+    pushPhase = 'DOWN';
+    hudPhase.textContent = 'HOLD ↓';
+    poseStatus.textContent = 'PUSH: IN POSITION';
+  } else if (pushPhase === 'DOWN' && !isDown) {
+    pushPhase = 'UP';
+    hudPhase.textContent = 'PUSH UP ↑';
+    if (!completed) triggerRep();
+    poseStatus.textContent = 'PUSH: REP COUNTED';
+  } else {
+    poseStatus.textContent = pushPhase === 'UP' ? 'PUSH: GET LOW' : 'PUSH: HOLD BOTTOM';
+  }
+}
+
+// ── PLANK ──
+function detectPlank(lm) {
+  if (!vis(lm, LM.L_SHOULDER, LM.R_SHOULDER, LM.L_HIP, LM.R_HIP, LM.L_KNEE, LM.R_KNEE)) {
+    if (plankActive) {
+      plankActive = false;
+      hudPhase.textContent = 'HOLD PLANK POSITION';
+    }
+    poseStatus.textContent = 'PLANK: SHOW FULL BODY SIDE VIEW'; return;
+  }
+  const shoulder = mid(lm[LM.L_SHOULDER], lm[LM.R_SHOULDER]);
+  const hip = mid(lm[LM.L_HIP], lm[LM.R_HIP]);
+  const knee = mid(lm[LM.L_KNEE], lm[LM.R_KNEE]);
+
+  const tol = 0.1;
+  const aligned = Math.abs(shoulder.y - hip.y) < tol && Math.abs(hip.y - knee.y) < tol;
+
+  if (aligned) {
+    if (!plankActive) {
+      plankActive = true;
+      hudPhase.textContent = 'PLANK DETECTED — HOLD!';
+      poseStatus.textContent = 'PLANK: ACTIVE';
+      if (!plankInterval) {
+        plankInterval = setInterval(() => {
+          if (!plankActive || completed) return;
+          plankTimer++;
+          updateHUD();
+          if (plankTimer >= chosenTask.goal) triggerComplete();
+        }, 1000);
       }
     }
+    poseStatus.textContent = `PLANK: HOLDING — ${chosenTask.goal - Math.floor(plankTimer)}s LEFT`;
+  } else {
+    if (plankActive) {
+      plankActive = false;
+      poseStatus.textContent = 'PLANK: MISALIGNED — FIX POSITION';
+      hudPhase.textContent = 'REALIGN YOUR BODY';
+    } else {
+      poseStatus.textContent = 'PLANK: NEEDS STRAIGHT BODY';
+    }
   }
-  canvasCtx.restore();
 }
 
-// 3. Setup Pose & Camera
-const pose = new Pose({
-  locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
-});
+// ═══════════════════════════════════════════════
+//  DRAWING
+// ═══════════════════════════════════════════════
+const CONNECTIONS = window.POSE_CONNECTIONS || [];
 
-pose.setOptions({ modelComplexity: 0, smoothLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
-pose.onResults(onResults);
+function drawPose(landmarks) {
+  const W = canvasEl.width, H = canvasEl.height;
+  ctx2d.clearRect(0, 0, W, H);
+  if (!landmarks || landmarks.length === 0) return;
 
-const camera = new Camera(videoElement, {
-  onFrame: async () => { await pose.send({image: videoElement}); },
-  width: 1280, height: 720, facingMode: 'user'
-});
+  // draw connections
+  const connList = CONNECTIONS.length ? CONNECTIONS : [
+    [11,12],[11,13],[13,15],[12,14],[14,16],
+    [11,23],[12,24],[23,24],[23,25],[25,27],[24,26],[26,28],
+    [27,29],[28,30],[29,31],[30,32]
+  ];
 
-// 4. Wake Lock (Keep screen on)
-async function requestWakeLock() {
-  try { await navigator.wakeLock.request('screen'); } catch (err) {}
+  ctx2d.save();
+  ctx2d.shadowColor = '#00fff7';
+  ctx2d.shadowBlur = 8;
+  ctx2d.strokeStyle = '#00fff7';
+  ctx2d.lineWidth = 2.5;
+  ctx2d.globalAlpha = 0.85;
+
+  connList.forEach(([a, b]) => {
+    const la = landmarks[a], lb = landmarks[b];
+    if (!la || !lb) return;
+    if ((la.visibility||1) < 0.3 || (lb.visibility||1) < 0.3) return;
+    ctx2d.beginPath();
+    ctx2d.moveTo(la.x * W, la.y * H);
+    ctx2d.lineTo(lb.x * W, lb.y * H);
+    ctx2d.stroke();
+  });
+
+  // draw joints
+  ctx2d.globalAlpha = 1;
+  ctx2d.shadowBlur = 12;
+  landmarks.forEach((lm, i) => {
+    if ((lm.visibility||1) < 0.3) return;
+    const isKey = [11,12,13,14,23,24,25,26,15,16,27,28].includes(i);
+    ctx2d.beginPath();
+    ctx2d.arc(lm.x * W, lm.y * H, isKey ? 5 : 3, 0, Math.PI * 2);
+    ctx2d.fillStyle = isKey ? '#ffffff' : '#00fff7';
+    ctx2d.shadowColor = '#00fff7';
+    ctx2d.fill();
+  });
+  ctx2d.restore();
 }
 
-initTask();
-camera.start();
-requestWakeLock();
+// ═══════════════════════════════════════════════
+//  MEDIAPIPE SETUP
+// ═══════════════════════════════════════════════
+let pose;
 
+function initPose() {
+  pose = new Pose({
+    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+  });
+
+  pose.setOptions({
+    modelComplexity: 0,     // 0 = Lite, fastest on mobile
+    smoothLandmarks: true,
+    enableSegmentation: false,
+    smoothSegmentation: false,
+    minDetectionConfidence: 0.5,
+    minTrackingConfidence: 0.5,
+  });
+
+  pose.onResults((results) => {
+    if (completed) return;
+
+    canvasEl.width = videoEl.videoWidth || canvasEl.offsetWidth;
+    canvasEl.height = videoEl.videoHeight || canvasEl.offsetHeight;
+
+    const lm = results.poseLandmarks;
+    poseReady = !!lm;
+
+    drawPose(lm);
+
+    if (lm) {
+      switch (chosenTask.id) {
+        case 'squat':  detectSquat(lm);  break;
+        case 'jack':   detectJack(lm);   break;
+        case 'pushup': detectPushup(lm); break;
+        case 'plank':  detectPlank(lm);  break;
+      }
+    } else {
+      poseStatus.textContent = 'NO POSE DETECTED — ADJUST POSITION';
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════
+//  CAMERA
+// ═══════════════════════════════════════════════
+async function startCamera() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+      audio: false
+    });
+    videoEl.srcObject = stream;
+
+    await new Promise(res => { videoEl.onloadedmetadata = res; });
+    await videoEl.play();
+    canvasEl.width = videoEl.videoWidth;
+    canvasEl.height = videoEl.videoHeight;
+
+    const camera = new Camera(videoEl, {
+      onFrame: async () => { if (pose) await pose.send({ image: videoEl }); },
+      width: 640, height: 480
+    });
+    camera.start();
+
+    poseStatus.textContent = 'CAMERA ACTIVE — GET INTO POSITION';
+  } catch(err) {
+    poseStatus.textContent = 'CAMERA ERROR: ' + err.message;
+    hudPhase.textContent = 'ALLOW CAMERA ACCESS';
+  }
+}
+
+// ═══════════════════════════════════════════════
+//  START BUTTON
+// ═══════════════════════════════════════════════
+document.getElementById('btnStart').addEventListener('click', async () => {
+  // unlock audio context on user gesture
+  if (!audioCtx) audioCtx = new AudioCtx();
+  try { await audioCtx.resume(); } catch(e) {}
+
+  splashEl.classList.add('hidden');
+  exerciseEl.classList.remove('hidden');
+  updateHUD();
+
+  await acquireWakeLock();
+  initPose();
+  await startCamera();
+
+  // task-specific initial instructions
+  const instrs = {
+    squat: 'STAND FACING CAMERA · SQUAT DOWN',
+    jack: 'STAND FACING CAMERA · ARMS AT SIDES',
+    pushup: 'GET INTO PUSH-UP POSITION',
+    plank: 'GET INTO PLANK · SHOW SIDE PROFILE',
+  };
+  hudPhase.textContent = instrs[chosenTask.id] || 'GET INTO POSITION';
+});
 </script>
 </body>
 </html>
